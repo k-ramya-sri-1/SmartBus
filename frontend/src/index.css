@@ -1,0 +1,38 @@
+:root {
+  --ink: #153b35;
+  --teal-dark: #126e60;
+  --teal: #288f7b;
+  --mint: #80d5b1;
+  --canvas: #f2f6f4;
+  --surface: #ffffff;
+  --line: #dfe9e5;
+  --muted: #6d817b;
+  --display-font: Georgia, 'Times New Roman', serif;
+  --body-font: 'Trebuchet MS', 'Segoe UI', sans-serif;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--body-font);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100svh;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+}
