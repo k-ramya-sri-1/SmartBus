@@ -1,0 +1,6 @@
+# SmartBus face verification service
+# OpenCV 5 ships the YuNet detector and the SFace recognizer used here.
+# opencv-contrib-python is pinned to a version that provides cv2.face for
+# diagnostics; the recognition path itself only needs the core objdetect module.
+opencv-contrib-python>=5.0.0
+numpy>=2.0

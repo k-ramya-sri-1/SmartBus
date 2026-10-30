@@ -1,5 +1,7 @@
 const express = require("express");
 
+const { authenticateDeviceOrStaff } = require("../middleware/anyAuth");
+const { authenticateToken, authorizeRoles } = require("../middleware/authMiddleware");
 const {
     createEmergencyEvent,
     getAllEmergencyEvents,
@@ -9,16 +11,20 @@ const {
 
 const router = express.Router();
 
-// Create emergency event
-router.post("/", createEmergencyEvent);
+// An SOS comes from the bus unit (device credentials) or from a staff member
+// who is reporting on the bus unit's behalf (bearer token).
+router.post("/", authenticateDeviceOrStaff, createEmergencyEvent);
 
-// Get all emergency events
-router.get("/", getAllEmergencyEvents);
+const staffRead = [authenticateToken, authorizeRoles("ADMIN", "TRANSPORT_MANAGER", "DRIVER", "CONDUCTOR")];
 
-// Get emergency event by ID
-router.get("/:id", getEmergencyEventById);
+router.get("/", ...staffRead, getAllEmergencyEvents);
+router.get("/:id", ...staffRead, getEmergencyEventById);
 
-// Update emergency status
-router.put("/:id/status", updateEmergencyStatus);
+router.put(
+    "/:id/status",
+    authenticateToken,
+    authorizeRoles("ADMIN", "TRANSPORT_MANAGER"),
+    updateEmergencyStatus
+);
 
 module.exports = router;

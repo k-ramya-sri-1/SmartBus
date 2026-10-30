@@ -1,4 +1,5 @@
 const db = require("../config/database");
+const capacityService = require("./capacityService");
 
 /*
     PHASE 17
@@ -189,66 +190,23 @@ const getCandidateBuses = async (
 // Calculate current passengers
 // --------------------------------------------------
 
-const getCurrentPassengers = async (busId) => {
-
-    const [rows] = await db.query(
-        `SELECT COUNT(DISTINCT student_id) AS count
-         FROM boarding_records
-         WHERE bus_id = ?
-           AND access_result = 'GRANTED'`,
-        [busId]
-    );
-
-    return Number(rows[0].count);
-};
+// Delegated to capacityService so the formula in report section 4.10 has
+// exactly one implementation in the codebase.
+const getCurrentPassengers = (busId) => capacityService.getCurrentPassengers(busId);
 
 
 // --------------------------------------------------
 // Calculate pending assigned students
 // --------------------------------------------------
 
-const getPendingAssignedStudents = async (busId) => {
-
-    const [rows] = await db.query(
-        `SELECT COUNT(DISTINCT ba.student_id) AS count
-         FROM bus_assignments ba
-         WHERE ba.bus_id = ?
-           AND ba.assignment_status = 'ACTIVE'
-           AND CURDATE() >= ba.valid_from
-           AND (
-                ba.valid_to IS NULL
-                OR CURDATE() <= ba.valid_to
-           )
-           AND NOT EXISTS (
-                SELECT 1
-                FROM boarding_records br
-                WHERE br.student_id = ba.student_id
-                  AND br.bus_id = ba.bus_id
-                  AND br.access_result = 'GRANTED'
-           )`,
-        [busId]
-    );
-
-    return Number(rows[0].count);
-};
+const getPendingAssignedStudents = (busId) => capacityService.getPendingAssignedStudents(busId);
 
 
 // --------------------------------------------------
 // Calculate already allocated rescue students
 // --------------------------------------------------
 
-const getAllocatedRescueStudents = async (busId) => {
-
-    const [rows] = await db.query(
-        `SELECT COUNT(DISTINCT student_id) AS count
-         FROM rescue_allocations
-         WHERE rescue_bus_id = ?
-           AND allocation_status = 'ALLOCATED'`,
-        [busId]
-    );
-
-    return Number(rows[0].count);
-};
+const getAllocatedRescueStudents = (busId) => capacityService.getAllocatedRescueStudents(busId);
 
 
 // --------------------------------------------------
@@ -257,10 +215,11 @@ const getAllocatedRescueStudents = async (busId) => {
 
 const checkRouteCompatibility = async (
     busId,
-    routeId
+    routeId,
+    executor = db
 ) => {
 
-    const [routes] = await db.query(
+    const [routes] = await executor.query(
         `SELECT id
          FROM bus_routes
          WHERE bus_id = ?
@@ -281,7 +240,7 @@ const checkRouteCompatibility = async (
 // Allocate rescue students
 // --------------------------------------------------
 
-const allocateRescueStudents = async ({
+const allocateRescueStudentsUnlocked = async ({
     emergencyEventId,
     maxDistanceKm = 20
 }) => {
@@ -445,29 +404,72 @@ const allocateRescueStudents = async ({
                 continue;
             }
 
-            // Allocate
-            const [result] = await db.query(
-                `INSERT INTO rescue_allocations
-                (
-                    emergency_event_id,
-                    student_id,
-                    rescue_bus_id,
-                    allocation_status
-                )
-                VALUES (?, ?, ?, 'ALLOCATED')`,
-                [
-                    emergencyEventId,
-                    student.student_id,
-                    bus.bus_id
-                ]
+            const allocation = await capacityService.withBusCapacityLock(
+                bus.bus_id,
+                async (connection) => {
+                    const capacity = await capacityService.getBusCapacity(
+                        bus.bus_id,
+                        connection
+                    );
+
+                    if (!capacity || capacity.rescue_capacity <= 0) {
+                        return null;
+                    }
+
+                    if (!(await checkRouteCompatibility(
+                        bus.bus_id,
+                        student.route_id,
+                        connection
+                    ))) {
+                        return null;
+                    }
+
+                    const [existing] = await connection.query(
+                        `SELECT id
+                           FROM rescue_allocations
+                          WHERE emergency_event_id = ?
+                            AND student_id = ?
+                            AND allocation_status IN ('ALLOCATED', 'BOARDED')
+                          LIMIT 1`,
+                        [emergencyEventId, student.student_id]
+                    );
+
+                    if (existing.length > 0) {
+                        return { insertId: existing[0].id, duplicate: true };
+                    }
+
+                    const [result] = await connection.query(
+                        `INSERT INTO rescue_allocations
+                        (
+                            emergency_event_id,
+                            student_id,
+                            rescue_bus_id,
+                            allocation_status
+                        )
+                        VALUES (?, ?, ?, 'ALLOCATED')`,
+                        [
+                            emergencyEventId,
+                            student.student_id,
+                            bus.bus_id
+                        ]
+                    );
+
+                    return { insertId: result.insertId, duplicate: false };
+                }
             );
 
+            if (!allocation) {
+                continue;
+            }
+
             // Reduce available rescue capacity
-            bus.rescue_capacity -= 1;
+            if (!allocation.duplicate) {
+                bus.rescue_capacity -= 1;
+            }
 
             allocations.push({
                 allocation_id:
-                    result.insertId,
+                allocation.insertId,
 
                 student_id:
                     student.student_id,
@@ -555,6 +557,12 @@ const allocateRescueStudents = async ({
             unallocatedStudents
     };
 };
+
+const allocateRescueStudents = async (params) =>
+    capacityService.withEmergencyAllocationLock(
+        params.emergencyEventId,
+        () => allocateRescueStudentsUnlocked(params)
+    );
 
 
 module.exports = {

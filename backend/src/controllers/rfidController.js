@@ -1,5 +1,28 @@
 const db = require("../config/database");
 
+// List every registered card with the student it belongs to (staff only).
+const listRFIDCards = async (req, res) => {
+    try {
+        const [cards] = await db.query(
+            `SELECT r.id, r.student_id, s.student_id AS student_code, s.name AS student_name,
+                    r.rfid_uid, r.status, r.issued_at, r.last_verified_at
+               FROM rfid_cards r
+               JOIN students s ON s.id = r.student_id
+              ORDER BY r.id ASC`
+        );
+
+        res.json({ success: true, count: cards.length, cards });
+    } catch (error) {
+        console.error("List RFID error:", error.message);
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch RFID cards"
+        });
+    }
+};
+
+
 // Register RFID card
 const registerRFID = async (req, res) => {
     try {
@@ -68,53 +91,7 @@ const registerRFID = async (req, res) => {
 };
 
 
-// Get student using RFID UID
-const getStudentByRFID = async (req, res) => {
-    try {
-        const { uid } = req.params;
-
-        const [records] = await db.query(
-            `SELECT
-                r.id AS rfid_card_id,
-                r.rfid_uid,
-                r.status AS rfid_status,
-                s.id AS student_db_id,
-                s.student_id,
-                s.name,
-                s.email,
-                s.phone,
-                s.status AS student_status
-             FROM rfid_cards r
-             JOIN students s ON r.student_id = s.id
-             WHERE r.rfid_uid = ?`,
-            [uid]
-        );
-
-        if (records.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "RFID card not found"
-            });
-        }
-
-        res.json({
-            success: true,
-            student: records[0]
-        });
-
-    } catch (error) {
-        console.error("Get RFID error:", error.message);
-
-        res.status(500).json({
-            success: false,
-            message: "Failed to fetch RFID information",
-            error: error.message
-        });
-    }
-};
-
-
 module.exports = {
-    registerRFID,
-    getStudentByRFID
+    listRFIDCards,
+    registerRFID
 };

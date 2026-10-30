@@ -1,8 +1,14 @@
 import { useEffect } from 'react'
-import StatusBadge from '../components/StatusBadge'
 import BusMap from '../components/BusMap'
-import { buses } from '../services/mockData'
-import socket from '../services/socket'
+import StatusBadge from '../components/StatusBadge'
+import socket, { connectSocket, disconnectSocket } from '../services/socket'
+
+/**
+ * Live tracking.
+ *
+ * The map subscribes to `gps_update` events; the connection is authenticated
+ * with the session token, and the backend refuses anonymous subscribers.
+ */
 
 function LiveTracking() {
   useEffect(() => {
@@ -14,12 +20,21 @@ function LiveTracking() {
       console.log('Socket.IO disconnected')
     }
 
+    const handleError = (error: Error) => {
+      console.warn('Socket.IO rejected:', error.message)
+    }
+
     socket.on('connect', handleConnect)
     socket.on('disconnect', handleDisconnect)
+    socket.on('connect_error', handleError)
+
+    connectSocket()
 
     return () => {
       socket.off('connect', handleConnect)
       socket.off('disconnect', handleDisconnect)
+      socket.off('connect_error', handleError)
+      disconnectSocket()
     }
   }, [])
 
@@ -34,11 +49,10 @@ function LiveTracking() {
             </div>
 
             <span className="live-indicator">
-              <span aria-hidden="true" /> Live preview
+              <span aria-hidden="true" /> Live
             </span>
           </div>
 
-          {/* Phase 22: Leaflet + OpenStreetMap */}
           <BusMap />
         </article>
 
@@ -46,38 +60,17 @@ function LiveTracking() {
           <div className="panel-heading">
             <div>
               <p className="section-kicker">On the move</p>
-              <h2>Active fleet</h2>
+              <h2>Position feed</h2>
             </div>
-
-            <span className="panel-count">3 buses</span>
+            <span className="panel-count">GPS</span>
           </div>
 
-          <div className="tracking-bus-list">
-            {buses.slice(0, 3).map((bus) => (
-              <div className="tracking-bus" key={bus.id}>
-                <div className="tracking-bus-icon" aria-hidden="true">
-                  BUS
-                </div>
+          <p className="muted">
+            Positions come from the NEO-6M on each bus unit. A unit without a fix is not shown
+            on the map, because a guessed position is worse than no position.
+          </p>
 
-                <div className="tracking-bus-copy">
-                  <strong>{bus.number}</strong>
-                  <span>{bus.route}</span>
-                </div>
-
-                <StatusBadge label={bus.status} />
-
-                <div className="tracking-detail-grid">
-                  <span>
-                    Passengers <strong>{bus.passengers}</strong>
-                  </span>
-
-                  <span>
-                    Capacity <strong>{bus.capacity}</strong>
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+          <StatusBadge label="GPS_FIX required" tone="info" />
         </aside>
       </section>
     </div>

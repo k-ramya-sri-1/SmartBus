@@ -1232,3 +1232,88 @@ td strong {
   .login-aside-rule { margin-top: 28px; }
 }
 
+
+/* --- Face enrollment + shared form/notice helpers ----------------------- */
+.muted {
+  color: #6b7280;
+  font-size: 0.86rem;
+}
+
+.enroll-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  align-items: end;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.86rem;
+  color: #4b5563;
+}
+
+.field select,
+.field input[type='file'] {
+  border: 1px solid #d7dbe0;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #fff;
+  font-size: 0.9rem;
+  color: #111827;
+}
+
+.field select:focus,
+.field input[type='file']:focus {
+  outline: 2px solid #2f6f6a;
+  outline-offset: 1px;
+}
+
+.enroll-actions {
+  justify-content: flex-end;
+}
+
+.enroll-note {
+  margin-top: 12px;
+  font-size: 0.85rem;
+  color: #4b5563;
+}
+
+.enroll-success {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #e8f5ee;
+  color: #1b6b45;
+  font-size: 0.88rem;
+}
+
+.enroll-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fdecec;
+  color: #a12626;
+  font-size: 0.88rem;
+}
+
+.incident-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.allocation-summary {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #f4f7f9;
+  font-size: 0.88rem;
+}
+
+.allocation-summary ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}

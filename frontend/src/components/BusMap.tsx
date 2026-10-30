@@ -8,6 +8,7 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import socket from "../services/socket";
+import { api, type GpsLocation } from "../services/api";
 
 const busIcon = new L.Icon({
   iconUrl:
@@ -22,158 +23,74 @@ const busIcon = new L.Icon({
   shadowSize: [41, 41],
 });
 
-interface BusLocation {
-  id: number;
-  bus_id: number;
-  bus_number: string;
-  registration_number: string;
-  latitude: string | number;
-  longitude: string | number;
-  speed: string | number | null;
-  recorded_at: string;
-}
-
-const busIds = [1, 5, 7];
-
+/**
+ * Live bus map.
+ *
+ * Only positions the backend marks as a current GPS fix are placed on the map.
+ * A stale or missing fix is deliberately omitted: drawing the last known point
+ * as if it were current would mislead the transport desk.
+ */
 function BusMap() {
-  const [busLocations, setBusLocations] = useState<BusLocation[]>([]);
+  const [locations, setLocations] = useState<GpsLocation[]>([]);
 
-  // --------------------------------------------------
-  // Load latest GPS locations from backend
-  // --------------------------------------------------
   useEffect(() => {
-    const fetchBusLocations = async () => {
+    let cancelled = false;
+
+    async function loadInitial() {
       try {
+        const buses = await api.buses.list();
         const results = await Promise.all(
-          busIds.map(async (busId) => {
-            const response = await fetch(
-              `http://localhost:5000/api/gps/latest/${busId}`,
-            );
-
-            const data = await response.json();
-
-            if (data.success && data.location) {
-              return data.location as BusLocation;
+          buses.map(async (bus) => {
+            try {
+              const { location } = await api.gps.latest(bus.id);
+              return location.is_current ? location : null;
+            } catch {
+              // 404 simply means this bus has never reported a position.
+              return null;
             }
-
-            return null;
           }),
         );
 
-        const validLocations = results.filter(
-          (location): location is BusLocation =>
-            location !== null,
-        );
-
-        setBusLocations(validLocations);
-
-        console.log(
-          "Initial GPS locations loaded:",
-          validLocations,
-        );
+        if (!cancelled) {
+          setLocations(
+            results.filter((location): location is GpsLocation => location !== null),
+          );
+        }
       } catch (error) {
-        console.error(
-          "Failed to fetch bus GPS locations:",
-          error,
-        );
+        console.error("Could not load initial GPS positions:", error);
       }
-    };
+    }
 
-    fetchBusLocations();
+    void loadInitial();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // --------------------------------------------------
-  // Socket.IO connection + real-time GPS updates
-  // --------------------------------------------------
   useEffect(() => {
-    console.log(
-      "BusMap: registering Socket.IO GPS listener",
-    );
+    const handleGpsUpdate = (update: GpsLocation) => {
+      if (update.fix_status !== "GPS_FIX") {
+        return;
+      }
 
-    const handleConnect = () => {
-      console.log(
-        "BusMap Socket.IO connected:",
-        socket.id,
-      );
-    };
+      setLocations((current) => {
+        const index = current.findIndex((item) => item.bus_id === update.bus_id);
 
-    const handleConnectError = (error: Error) => {
-      console.error(
-        "BusMap Socket.IO connection error:",
-        error.message,
-      );
-    };
-
-    const handleGPSUpdate = (location: BusLocation) => {
-      console.log(
-        "🔥 REAL-TIME GPS UPDATE RECEIVED:",
-        location,
-      );
-
-      setBusLocations((currentLocations) => {
-        const existingIndex = currentLocations.findIndex(
-          (bus) => bus.bus_id === location.bus_id,
-        );
-
-        // If this bus is not currently on the map,
-        // add it.
-        if (existingIndex === -1) {
-          console.log(
-            "Adding new bus location:",
-            location.bus_number,
-          );
-
-          return [...currentLocations, location];
+        if (index === -1) {
+          return [...current, update];
         }
 
-        // Update the existing bus.
-        const updatedLocations = [...currentLocations];
-
-        updatedLocations[existingIndex] = {
-          ...updatedLocations[existingIndex],
-          ...location,
-        };
-
-        console.log(
-          "Updated bus position:",
-          location.bus_number,
-          location.latitude,
-          location.longitude,
-        );
-
-        return updatedLocations;
+        const next = [...current];
+        next[index] = { ...next[index], ...update };
+        return next;
       });
     };
 
-    // Connection events
-    socket.on("connect", handleConnect);
-    socket.on("connect_error", handleConnectError);
-
-    // GPS real-time event
-    socket.on("gps_update", handleGPSUpdate);
-
-    console.log(
-      "BusMap: gps_update listener registered",
-    );
-
-    socket.connect();
+    socket.on("gps_update", handleGpsUpdate);
 
     return () => {
-      socket.off("connect", handleConnect);
-      socket.off(
-        "connect_error",
-        handleConnectError,
-      );
-      socket.off(
-        "gps_update",
-        handleGPSUpdate,
-      );
-
-      socket.disconnect();
-
-      console.log(
-        "BusMap: Socket.IO listeners removed",
-      );
+      socket.off("gps_update", handleGpsUpdate);
     };
   }, []);
 
@@ -181,47 +98,37 @@ function BusMap() {
     <MapContainer
       center={[17.408, 78.479]}
       zoom={13}
-      style={{
-        height: "500px",
-        width: "100%",
-      }}
+      style={{ height: "500px", width: "100%" }}
     >
       <TileLayer
         attribution="&copy; OpenStreetMap contributors"
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
 
-      {busLocations.map((bus) => (
+      {locations.map((bus) => (
         <Marker
           key={bus.bus_id}
-          position={[
-            Number(bus.latitude),
-            Number(bus.longitude),
-          ]}
+          position={[Number(bus.latitude), Number(bus.longitude)]}
           icon={busIcon}
         >
           <Popup>
             <strong>{bus.bus_number}</strong>
-
             <br />
-
-            Registration: {bus.registration_number}
-
+            Registration: {bus.registration_number ?? "—"}
             <br />
-
             Speed: {bus.speed ?? 0} km/h
-
             <br />
-
-            Latitude: {bus.latitude}
-
+            Latitude: {Number(bus.latitude).toFixed(5)}
             <br />
-
-            Longitude: {bus.longitude}
-
+            Longitude: {Number(bus.longitude).toFixed(5)}
             <br />
-
-            Recorded: {bus.recorded_at}
+            Recorded: {new Date(bus.recorded_at).toLocaleTimeString()}
+            {bus.route_deviation_m !== null && (
+              <>
+                <br />
+                Route deviation: {bus.route_deviation_m} m
+              </>
+            )}
           </Popup>
         </Marker>
       ))}

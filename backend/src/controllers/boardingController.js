@@ -1,236 +1,167 @@
 const db = require("../config/database");
+const { asyncHandler } = require("../middleware/errors");
+const {
+    requireInt,
+    requireString,
+    requireEnum,
+    optionalString
+} = require("../utils/validation");
 
-// Create a boarding record
-const createBoardingRecord = async (req, res) => {
-    try {
-        const {
-            student_id,
-            bus_id,
-            route_id,
-            rfid_card_id,
-            temporary_authorization_id,
-            rfid_verified,
-            face_verified,
-            access_result,
-            denial_reason,
-            boarding_type
-        } = req.body;
+/**
+ * Create a boarding record manually.
+ *
+ * Normal traffic is written by the access-control endpoint, which carries the
+ * face proof and the device identity. This route exists for an operator to
+ * correct or annotate a record, and is restricted to management roles.
+ */
+const createBoardingRecord = asyncHandler(async (req, res) => {
+    const studentId = requireInt(req.body.student_id, "student_id", { min: 1 });
+    const busId = requireInt(req.body.bus_id, "bus_id", { min: 1 });
+    const routeId = requireInt(req.body.route_id, "route_id", { min: 1 });
 
-        // Required fields
-        if (!student_id || !bus_id || !route_id) {
-            return res.status(400).json({
-                success: false,
-                message: "student_id, bus_id and route_id are required"
-            });
-        }
+    const accessResult = requireEnum(req.body.access_result ?? "DENIED", "access_result", [
+        "GRANTED",
+        "DENIED"
+    ]);
 
-        // Check student
-        const [students] = await db.query(
-            "SELECT id, student_id, name, status FROM students WHERE id = ?",
-            [student_id]
-        );
+    const boardingType = requireEnum(req.body.boarding_type ?? "NORMAL", "boarding_type", [
+        "NORMAL",
+        "RESCUE",
+        "FEST"
+    ]);
 
-        if (students.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "Student not found"
-            });
-        }
+    const denialReason = accessResult === "DENIED"
+        ? optionalString(req.body.denial_reason ?? "OTHER", "denial_reason", { max: 40 })
+        : null;
 
-        // Check bus
-        const [buses] = await db.query(
-            "SELECT id, bus_number, status FROM buses WHERE id = ?",
-            [bus_id]
-        );
+    const [students] = await db.query("SELECT id FROM students WHERE id = ? LIMIT 1", [studentId]);
 
-        if (buses.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "Bus not found"
-            });
-        }
-
-        // Check route
-        const [routes] = await db.query(
-            "SELECT id, route_name, status FROM routes WHERE id = ?",
-            [route_id]
-        );
-
-        if (routes.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "Route not found"
-            });
-        }
-
-        // If RFID card ID is provided, verify it exists
-        if (rfid_card_id) {
-            const [rfidCards] = await db.query(
-                `SELECT id, student_id, rfid_uid, status
-                 FROM rfid_cards
-                 WHERE id = ?`,
-                [rfid_card_id]
-            );
-
-            if (rfidCards.length === 0) {
-                return res.status(404).json({
-                    success: false,
-                    message: "RFID card not found"
-                });
-            }
-
-            // Make sure RFID card belongs to the same student
-            if (rfidCards[0].student_id !== student_id) {
-                return res.status(400).json({
-                    success: false,
-                    message: "RFID card does not belong to this student"
-                });
-            }
-        }
-
-        // Insert boarding record
-        const [result] = await db.query(
-            `INSERT INTO boarding_records
-            (
-                student_id,
-                bus_id,
-                route_id,
-                rfid_card_id,
-                temporary_authorization_id,
-                rfid_verified,
-                face_verified,
-                access_result,
-                denial_reason,
-                boarding_type
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                student_id,
-                bus_id,
-                route_id,
-                rfid_card_id || null,
-                temporary_authorization_id || null,
-                rfid_verified || false,
-                face_verified || false,
-                access_result || "DENIED",
-                denial_reason || null,
-                boarding_type || "NORMAL"
-            ]
-        );
-
-        res.status(201).json({
-            success: true,
-            message: "Boarding record created successfully",
-            id: result.insertId
-        });
-
-    } catch (error) {
-        console.error("Create boarding record error:", error.message);
-
-        res.status(500).json({
+    if (students.length === 0) {
+        return res.status(404).json({
             success: false,
-            message: "Failed to create boarding record",
-            error: error.message
+            error: "STUDENT_NOT_FOUND",
+            message: "Student not found."
         });
     }
-};
 
+    const [buses] = await db.query("SELECT id FROM buses WHERE id = ? LIMIT 1", [busId]);
 
-// Get all boarding records
-const getAllBoardingRecords = async (req, res) => {
-    try {
-        const [records] = await db.query(`
-            SELECT
-                br.id,
-                s.student_id,
-                s.name AS student_name,
-                b.bus_number,
-                r.route_name,
-                br.rfid_card_id,
-                br.rfid_verified,
-                br.face_verified,
-                br.access_result,
-                br.denial_reason,
-                br.boarding_type,
-                br.boarded_at
-            FROM boarding_records br
-            JOIN students s ON br.student_id = s.id
-            JOIN buses b ON br.bus_id = b.id
-            JOIN routes r ON br.route_id = r.id
-            ORDER BY br.id DESC
-        `);
-
-        res.json({
-            success: true,
-            count: records.length,
-            records
-        });
-
-    } catch (error) {
-        console.error("Get boarding records error:", error.message);
-
-        res.status(500).json({
+    if (buses.length === 0) {
+        return res.status(404).json({
             success: false,
-            message: "Failed to fetch boarding records",
-            error: error.message
+            error: "BUS_NOT_FOUND",
+            message: "Bus not found."
         });
     }
-};
 
+    const [routes] = await db.query("SELECT id FROM routes WHERE id = ? LIMIT 1", [routeId]);
 
-// Get boarding record by ID
-const getBoardingRecordById = async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        const [records] = await db.query(`
-            SELECT
-                br.id,
-                br.student_id,
-                br.bus_id,
-                br.route_id,
-                br.rfid_card_id,
-                br.temporary_authorization_id,
-                br.rfid_verified,
-                br.face_verified,
-                br.access_result,
-                br.denial_reason,
-                br.boarding_type,
-                br.boarded_at,
-                s.student_id AS student_code,
-                s.name AS student_name,
-                b.bus_number,
-                r.route_name
-            FROM boarding_records br
-            JOIN students s ON br.student_id = s.id
-            JOIN buses b ON br.bus_id = b.id
-            JOIN routes r ON br.route_id = r.id
-            WHERE br.id = ?
-        `, [id]);
-
-        if (records.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "Boarding record not found"
-            });
-        }
-
-        res.json({
-            success: true,
-            record: records[0]
-        });
-
-    } catch (error) {
-        console.error("Get boarding record error:", error.message);
-
-        res.status(500).json({
+    if (routes.length === 0) {
+        return res.status(404).json({
             success: false,
-            message: "Failed to fetch boarding record",
-            error: error.message
+            error: "ROUTE_NOT_FOUND",
+            message: "Route not found."
         });
     }
-};
 
+    const [result] = await db.query(
+        `INSERT INTO boarding_records
+            (student_id, bus_id, route_id, rfid_verified, face_verified, access_result,
+             denial_reason, boarding_type)
+         VALUES (?, ?, ?, 0, 0, ?, ?, ?)`,
+        [studentId, busId, routeId, accessResult, denialReason, boardingType]
+    );
+
+    return res.status(201).json({
+        success: true,
+        message: "Boarding record created.",
+        id: result.insertId
+    });
+});
+
+const RECORD_COLUMNS = `
+    br.id,
+    br.student_id,
+    s.student_id AS student_code,
+    s.name AS student_name,
+    br.attempted_rfid_uid,
+    br.bus_id,
+    b.bus_number,
+    br.route_id,
+    r.route_name,
+    br.device_id,
+    d.device_uid,
+    br.authentication_mode,
+    br.rfid_card_id,
+    br.temporary_authorization_id,
+    br.face_verification_id,
+    br.rfid_verified,
+    br.face_verified,
+    br.face_score,
+    br.gps_status,
+    br.route_deviation_m,
+    br.access_result,
+    br.denial_reason,
+    br.boarding_type,
+    br.client_event_id,
+    br.boarded_at
+`;
+
+/**
+ * Every access attempt, including the ones that could not be attributed to a
+ * student (an unknown card). Those rows have no student, which is exactly why
+ * the joins are LEFT joins: an inner join would hide the most interesting
+ * denials from the operator.
+ */
+const getAllBoardingRecords = asyncHandler(async (req, res) => {
+    const limit = req.query.limit === undefined
+        ? 200
+        : requireInt(req.query.limit, "limit", { min: 1, max: 1000 });
+
+    const [records] = await db.query(
+        `SELECT ${RECORD_COLUMNS}
+           FROM boarding_records br
+           LEFT JOIN students s ON br.student_id = s.id
+           LEFT JOIN buses b ON br.bus_id = b.id
+           LEFT JOIN routes r ON br.route_id = r.id
+           LEFT JOIN devices d ON br.device_id = d.id
+          ORDER BY br.id DESC
+          LIMIT ?`,
+        [limit]
+    );
+
+    return res.json({
+        success: true,
+        count: records.length,
+        records
+    });
+});
+
+const getBoardingRecordById = asyncHandler(async (req, res) => {
+    const id = requireInt(req.params.id, "id", { min: 1 });
+
+    const [records] = await db.query(
+        `SELECT ${RECORD_COLUMNS}
+           FROM boarding_records br
+           LEFT JOIN students s ON br.student_id = s.id
+           LEFT JOIN buses b ON br.bus_id = b.id
+           LEFT JOIN routes r ON br.route_id = r.id
+           LEFT JOIN devices d ON br.device_id = d.id
+          WHERE br.id = ?
+          LIMIT 1`,
+        [id]
+    );
+
+    if (records.length === 0) {
+        return res.status(404).json({
+            success: false,
+            error: "RECORD_NOT_FOUND",
+            message: "Boarding record not found."
+        });
+    }
+
+    return res.json({ success: true, record: records[0] });
+});
 
 module.exports = {
     createBoardingRecord,

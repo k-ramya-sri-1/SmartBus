@@ -6,6 +6,7 @@ import {
   Buses,
   Dashboard,
   EmergencyCenter,
+  FaceEnrollment,
   LiveTracking,
   Login,
   Students,
@@ -57,6 +58,10 @@ function App() {
       title: 'Emergency Center',
       subtitle: 'Coordinate a fast, informed response to open incidents.',
     },
+    enrollment: {
+      title: 'Face Enrollment',
+      subtitle: 'Enroll the face each student is verified against.',
+    },
   }
 
   const renderPage = () => {
@@ -71,6 +76,8 @@ function App() {
         return <BoardingRecords />
       case 'emergency':
         return <EmergencyCenter />
+      case 'enrollment':
+        return <FaceEnrollment />
       default:
         return <Dashboard />
     }

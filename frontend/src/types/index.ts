@@ -5,6 +5,7 @@ export type PageKey =
   | 'buses'
   | 'boarding'
   | 'emergency'
+  | 'enrollment'
 
 export type BusStatus = 'Active' | 'Inactive' | 'Maintenance'
 export type EmergencyStatus = 'OPEN' | 'RESOLVED'

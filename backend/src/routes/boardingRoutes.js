@@ -1,5 +1,6 @@
 const express = require("express");
 
+const { authenticateToken, authorizeRoles } = require("../middleware/authMiddleware");
 const {
     createBoardingRecord,
     getAllBoardingRecords,
@@ -8,13 +9,15 @@ const {
 
 const router = express.Router();
 
-// Create boarding record
-router.post("/", createBoardingRecord);
+router.use(authenticateToken);
 
-// Get all boarding records
-router.get("/", getAllBoardingRecords);
+// Normal traffic is written by the access-control endpoint. This route exists
+// for a staff correction and therefore requires an operator role.
+router.post("/", authorizeRoles("ADMIN", "TRANSPORT_MANAGER"), createBoardingRecord);
 
-// Get boarding record by ID
-router.get("/:id", getBoardingRecordById);
+const staffRead = authorizeRoles("ADMIN", "TRANSPORT_MANAGER", "DRIVER", "CONDUCTOR");
+
+router.get("/", staffRead, getAllBoardingRecords);
+router.get("/:id", staffRead, getBoardingRecordById);
 
 module.exports = router;

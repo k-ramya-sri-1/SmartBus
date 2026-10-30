@@ -1,4 +1,5 @@
 const db = require("../config/database");
+const capacityService = require("./capacityService");
 
 
 // --------------------------------------------------
@@ -138,81 +139,13 @@ const createMissedBusAuthorization = async ({
     // 5. Check current successful passengers
     // ----------------------------------------------
 
-    const [passengerRows] = await db.query(
-        `
-        SELECT COUNT(DISTINCT student_id) AS current_passengers
-        FROM boarding_records
-        WHERE bus_id = ?
-          AND access_result = 'GRANTED'
-        `,
-        [alternateBusId]
+    return capacityService.withBusCapacityLock(alternateBusId, async (connection) => {
+    const capacity = await capacityService.getBusCapacity(
+        alternateBusId,
+        connection
     );
 
-    const currentPassengers =
-        Number(passengerRows[0].current_passengers);
-
-
-    // ----------------------------------------------
-    // 6. Check pending permanent assignments
-    // ----------------------------------------------
-
-    const [pendingRows] = await db.query(
-        `
-        SELECT COUNT(DISTINCT ba.student_id) AS pending_students
-
-        FROM bus_assignments ba
-
-        WHERE ba.bus_id = ?
-          AND ba.assignment_status = 'ACTIVE'
-          AND CURDATE() >= ba.valid_from
-          AND (
-                ba.valid_to IS NULL
-                OR CURDATE() <= ba.valid_to
-          )
-
-          AND NOT EXISTS (
-              SELECT 1
-              FROM boarding_records br
-              WHERE br.student_id = ba.student_id
-                AND br.bus_id = ba.bus_id
-                AND br.access_result = 'GRANTED'
-          )
-        `,
-        [alternateBusId]
-    );
-
-    const pendingStudents =
-        Number(pendingRows[0].pending_students);
-
-
-    // ----------------------------------------------
-    // 7. Check existing active rescue/missed
-    //    authorizations on alternate bus
-    // ----------------------------------------------
-
-    const [temporaryRows] = await db.query(
-        `
-        SELECT COUNT(DISTINCT student_id) AS temporary_students
-        FROM temporary_authorizations
-        WHERE temporary_bus_id = ?
-          AND status = 'ACTIVE'
-        `,
-        [alternateBusId]
-    );
-
-    const temporaryStudents =
-        Number(temporaryRows[0].temporary_students);
-
-
-    // ----------------------------------------------
-    // 8. Calculate available capacity
-    // ----------------------------------------------
-
-    const availableCapacity =
-        Number(alternateBus.maximum_capacity)
-        - currentPassengers
-        - pendingStudents
-        - temporaryStudents;
+    const availableCapacity = capacity ? capacity.rescue_capacity : 0;
 
 
     if (availableCapacity <= 0) {
@@ -227,7 +160,7 @@ const createMissedBusAuthorization = async ({
     //    authorization
     // ----------------------------------------------
 
-    const [existingAuthorization] = await db.query(
+    const [existingAuthorization] = await connection.query(
         `
         SELECT id
         FROM temporary_authorizations
@@ -250,7 +183,7 @@ const createMissedBusAuthorization = async ({
     // 10. Create temporary authorization
     // ----------------------------------------------
 
-    const [result] = await db.query(
+    const [result] = await connection.query(
         `
         INSERT INTO temporary_authorizations
         (
@@ -343,6 +276,7 @@ const createMissedBusAuthorization = async ({
         created_by_user_id:
             createdByUserId
     };
+    });
 };
 
 

@@ -1,5 +1,6 @@
 const express = require("express");
 
+const { authenticateToken, authorizeRoles } = require("../middleware/authMiddleware");
 const {
     authorizeRescueStudent,
     getAuthorizations,
@@ -9,33 +10,12 @@ const {
 
 const router = express.Router();
 
+router.use(authenticateToken);
+router.use(authorizeRoles("ADMIN", "TRANSPORT_MANAGER"));
 
-// Create temporary rescue authorization
-router.post(
-    "/authorize",
-    authorizeRescueStudent
-);
-
-
-// Get all authorizations
-router.get(
-    "/authorizations",
-    getAuthorizations
-);
-
-
-// Get authorization by ID
-router.get(
-    "/authorizations/:id",
-    getAuthorization
-);
-
-
-// Update authorization status
-router.put(
-    "/authorizations/:id/status",
-    changeAuthorizationStatus
-);
-
+router.post("/authorize", authorizeRescueStudent);
+router.get("/authorizations", getAuthorizations);
+router.get("/authorizations/:id", getAuthorization);
+router.put("/authorizations/:id/status", changeAuthorizationStatus);
 
 module.exports = router;

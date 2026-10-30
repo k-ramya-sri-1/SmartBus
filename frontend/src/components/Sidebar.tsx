@@ -13,6 +13,7 @@ const navigationItems: Array<{ key: PageKey; label: string; icon: string }> = [
   { key: 'buses', label: 'Buses', icon: '▰' },
   { key: 'boarding', label: 'Boarding Records', icon: '✓' },
   { key: 'emergency', label: 'Emergency Center', icon: '!' },
+  { key: 'enrollment', label: 'Face Enrollment', icon: '◉' },
 ]
 
 function Sidebar({ currentPage, onNavigate, onLogout }: SidebarProps) {

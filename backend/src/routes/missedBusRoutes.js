@@ -1,5 +1,6 @@
 const express = require("express");
 
+const { authenticateToken, authorizeRoles } = require("../middleware/authMiddleware");
 const {
     authorizeMissedBus,
     getMissedBusAuthorizationsController
@@ -7,19 +8,10 @@ const {
 
 const router = express.Router();
 
+router.use(authenticateToken);
+router.use(authorizeRoles("ADMIN", "TRANSPORT_MANAGER"));
 
-// Create missed-bus temporary authorization
-router.post(
-    "/authorize",
-    authorizeMissedBus
-);
-
-
-// Get missed-bus authorizations
-router.get(
-    "/authorizations",
-    getMissedBusAuthorizationsController
-);
-
+router.post("/authorize", authorizeMissedBus);
+router.get("/authorizations", getMissedBusAuthorizationsController);
 
 module.exports = router;

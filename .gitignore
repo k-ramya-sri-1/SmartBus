@@ -38,3 +38,11 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# SmartBus: local artefacts that must never be committed
+database/backups/
+.tmp/
+face-service/models/*.onnx
+face-service/data/
+esp32/SmartBus-ESP32/include/device_secrets.h
+esp32/SmartBus-ESP32/include/wifi_config.h

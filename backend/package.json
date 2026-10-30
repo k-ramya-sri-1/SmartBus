@@ -4,8 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "test": "node --test test/unit/pure.test.js test/integration/access.test.js",
+    "test:unit": "node --test test/unit/pure.test.js",
+    "test:integration": "node --test test/integration/access.test.js"
   },
   "keywords": [],
   "author": "",
